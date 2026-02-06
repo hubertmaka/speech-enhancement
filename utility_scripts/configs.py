@@ -9,6 +9,7 @@ class MixingAudioDatasetConfig:
     overlap: float
     min_snr: float
     max_snr: float
+    skip_ratio: int
 
 
 @dataclass
@@ -19,6 +20,8 @@ class AudioPreprocessorConfig:
     hop_length: int
     n_mels: int
     top_db: int
+    spec_type: Literal["amplitude", "power"] = "amplitude"
+    mel_scale: Literal["htk", "slaney"] = "htk"
     max_spec_shapes: tuple[int, int]
 
 
@@ -37,3 +40,41 @@ class AudioAugumentorConfig:
     freq_mask_bins: int
 
 
+@dataclass
+class MelBin2BinTrainConfig:
+    batch_size: int
+    num_workers: int
+    max_epochs: int
+    learning_rate: float
+    lambda_mag: float
+    lambda_sc: float
+    discriminator_train_freq: int
+    label_smoothing: float
+    warmup_epochs: int
+    g_filters: int
+    d_filters: int
+    g_input_channels: int
+    d_input_channels: int
+
+
+@dataclass
+class Pix2PixTrainConfig:
+    batch_size: int
+    num_workers: int
+    max_epochs: int
+    learning_rate: float
+    lambda_recon: float
+
+
+@dataclass
+class LinearBin2BinTrainConfig:
+    batch_size: int
+    num_workers: int
+    max_epochs: int
+    learning_rate: float
+    lambda_mag: float
+    lambda_sc: float
+    discriminator_train_freq: int
+    g_filters: int
+    d_filters: int
+    d_input_channels: int

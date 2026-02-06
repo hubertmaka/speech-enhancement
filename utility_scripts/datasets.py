@@ -213,7 +213,11 @@ class MelSpectrogramProcessor(SpectrogramProcessor):
             hop_length=self.c.hop_length,
             n_mels=self.c.n_mels,
             f_min=0,
-            f_max=self.c.sample_rate // 2
+            f_max=self.c.sample_rate // 2,
+            power=1.0 if self.c.spec_type == "amplitude" else 2.0,
+            mel_scale=self.c.mel_scale,
+            norm=self.c.mel_scale,
+            center=False,
         )
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -224,16 +228,42 @@ class MelSpectrogramProcessor(SpectrogramProcessor):
 
 # ======= Scalers =======
 
-class AmplitudeToDBScaler(Scaler):
-    """Convert amplitude spectrograms to decibel scale."""
+class AudioToDBScaler(Scaler):
+    """Convert amplitude or power spectrograms to decibel scale."""
     def __init__(self, audio_preprocessor_config: AudioPreprocessorConfig) -> None:
         super().__init__()
         self.top_db = audio_preprocessor_config.top_db
-        self.amplitude_to_db = T.AmplitudeToDB(top_db=self.top_db)
+        self.stype = audio_preprocessor_config.spec_type
+        self.amplitude_to_db = T.AmplitudeToDB(top_db=self.top_db, stype=self.stype)
     
     def forward(self, spec: torch.Tensor) -> torch.Tensor:
-        """Convert amplitude spectrogram to decibel scale."""
+        """Convert amplitude or power spectrogram to decibel scale."""
         return self.amplitude_to_db(spec)
+    
+
+class DBToLogScaler(Scaler):
+    """
+    Convert decibel spectrograms to the scale used by HiFi-GAN.
+    HiFi-GAN uses a log10 scale with a specific top_db, so we need to convert from the standard amplitude-to-dB scale to the HiFi-GAN scale.
+
+    The conversion is as follows:
+    1. Convert from dB to linear scale using the formula: linear = 10^(dB / divider), where divider is 10 for amplitude spectrograms and 20 for power spectrograms.
+    2. Apply natural logarithm and clamping as per HiFi-GAN implementation.
+    """
+    def __init__(self, audio_preprocessor_config: AudioPreprocessorConfig) -> None:
+        super().__init__()
+        self.cfg = audio_preprocessor_config
+        self.factor = self._determine_factor(audio_preprocessor_config)
+
+    def _determine_factor(self, cfg: AudioPreprocessorConfig) -> float:
+        """Determine the divider factor based on the spectrogram type."""
+        return 10.0 if cfg.spec_type == "amplitude" else 20.0
+
+    def forward(self, spec_db: torch.Tensor) -> torch.Tensor:
+        """Convert decibel spectrogram to log scale used by HiFi-GAN."""
+        spec_linear = torch.pow(10.0, spec_db / self.factor)
+        spec_log = torch.log(torch.clamp(spec_linear, min=1e-5))
+        return spec_log
     
 
 class AmplitudeToLog1pScaler(Scaler):
@@ -335,14 +365,20 @@ class TrimAdjuster(Adjuster):
 
 # ======= Pipelines =======
 
-class TrainPipeline(nn.Module):
-    """Pipeline for processing audio during training."""
+class DataPipeline(nn.Module):
+    """Pipeline to process audio data through steps:
+    - Preprocessing (e.g., spectrogram computation)
+    - Augmentation (e.g., time/frequency masking)
+    - Scaling (e.g., converting to dB or log scale)
+    - Normalization (e.g., standard or min-max normalization)
+    - Adjustment (e.g., trimming to target shape)
+    """
     def __init__(
             self,
-            preprocessor: SpectrogramProcessor,
-            augmentor: AudioAugmentor,
-            scale_converter: Scaler,
-            scaler: Normalizer,
+            preprocessor: SpectrogramProcessor = None,
+            augmentor: AudioAugmentor = None,
+            scale_converter: Scaler | None = None,
+            scaler: Normalizer | None = None,
             adjuster: Adjuster | None = None
     ) -> None:
         super().__init__()
@@ -352,24 +388,28 @@ class TrainPipeline(nn.Module):
         self.scaler = scaler
         self.adjuster = adjuster
 
-    def forward(self, noisy: torch.Tensor, clean: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
-        """Forward pass through the training pipeline."""
-        noisy_spec = self.preprocessor(noisy)
-        clean_spec = self.preprocessor(clean)
+    def forward(self, x: torch.Tensor, y: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass through the training pipeline. Returns pair of input and target data"""
+        if self.preprocessor:
+            x = self.preprocessor(x)
+            y = self.preprocessor(y)
         
-        noisy_spec = self.augmentor(noisy_spec)
+        if self.augmentor:
+            x = self.augmentor(x)
 
-        noisy_spec = self.scale_converter(noisy_spec)
-        clean_spec = self.scale_converter(clean_spec)
+        if self.scale_converter:
+            x = self.scale_converter(x)
+            y = self.scale_converter(y)
         
-        noisy_spec = self.scaler(noisy_spec)        
-        clean_spec = self.scaler(clean_spec)
+        if self.scaler:
+            x = self.scaler(x)        
+            y = self.scaler(y)
 
         if self.adjuster:
-            noisy_spec = self.adjuster(noisy_spec)
-            clean_spec = self.adjuster(clean_spec)
+            x = self.adjuster(x)
+            y = self.adjuster(y)
 
-        return noisy_spec, clean_spec
+        return x, y
 
 
 # ======= DataModule =======
