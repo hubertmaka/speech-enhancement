@@ -130,6 +130,11 @@ def create_dataframes(shared_path: str) -> dict[str, pd.DataFrame]:
     return {"wham_df": wham_df, "ears_df": ears_df}
 
 
+def create_scaler(cfg: NormalizerConfig) -> MinMaxFixedNormalizer:
+    """Create scaler"""
+    return MinMaxFixedNormalizer(cfg)
+
+
 def create_dataset(
         ears_df: pd.DataFrame, 
         wham_df: pd.DataFrame, 
@@ -162,7 +167,7 @@ def create_pipeline(
         augumentor_config=audio_augmentor_cfg
     )
     adjuster = TrimAdjuster(audio_preprocessor_cfg)
-    scaler = MinMaxFixedNormalizer(normalizer_cfg)
+    scaler = create_scaler(normalizer_cfg)
 
     pipeline = DataPipeline(
         preprocessor=preprocessor,
@@ -330,6 +335,5 @@ def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.T
     return trainer, model, data_module
 
 
-
-trainer, model, data_module = train(train_size=10_000, train_percentage=0.8)
-trainer.fit(model, datamodule=data_module)
+# trainer, model, data_module = train(train_size=10_000, train_percentage=0.8)
+# trainer.fit(model, datamodule=data_module)

@@ -217,7 +217,7 @@ class MelSpectrogramProcessor(SpectrogramProcessor):
             power=1.0 if self.c.spec_type == "amplitude" else 2.0,
             mel_scale=self.c.mel_scale,
             norm=self.c.mel_scale,
-            center=False,
+            center=True,
         )
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:

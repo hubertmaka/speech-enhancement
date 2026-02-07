@@ -155,6 +155,11 @@ def create_dataset(
     return ds
 
 
+def create_scaler(cfg: NormalizerConfig) -> MinMaxFixedNormalizer:
+    """Create scaler"""
+    return MinMaxFixedNormalizer(cfg)
+
+
 def create_pipeline(
         audio_preprocessor_cfg: AudioPreprocessorConfig, 
         audio_augmentor_cfg: AudioAugumentorConfig, 
@@ -165,10 +170,10 @@ def create_pipeline(
     scale_converter = AudioToDBScaler(audio_preprocessor_cfg)
     augmentor = AudioAugmentor(
         audio_preprocessor_config=audio_preprocessor_cfg, 
-        augmentor_config=audio_augmentor_cfg
+        augumentor_config=audio_augmentor_cfg
     )
     adjuster = TrimAdjuster(audio_preprocessor_cfg)
-    scaler = MinMaxFixedNormalizer(normalizer_cfg)
+    scaler = create_scaler(normalizer_cfg)
 
     pipeline = DataPipeline(
         preprocessor=preprocessor,
@@ -324,7 +329,7 @@ def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.T
         generator=generator,
         discriminator=discriminator,
         pipeline=pipeline,
-        scaler=data_module.pipeline.scaler,
+        scaler=create_scaler(configs["normalizer_cfg"]),
         cfg=configs["train_cfg"]
     )
 
@@ -343,5 +348,5 @@ def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.T
     return trainer, model, data_module
 
 
-trainer, model, data_module = train(train_size=10_000, train_percentage=0.8)
-trainer.fit(model, datamodule=data_module)
+# trainer, model, data_module = train(train_size=10_000, train_percentage=0.8)
+# trainer.fit(model, datamodule=data_module)
