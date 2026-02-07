@@ -1,13 +1,17 @@
 import torch
 import torch.nn as nn
 
+from utility_scripts.configs import AudioPreprocessorConfig
+
 
 class MaskedSpectralLoss(nn.Module):
     """Computes Masked Magnitude Loss and Spectral Convergence Loss."""
-    def __init__(self, scaler: nn.Module) -> None:
+    def __init__(self, scaler: nn.Module, cfg: AudioPreprocessorConfig) -> None:
         super().__init__()
         self.scaler = scaler
-        self.register_buffer('log_conversion', torch.log(torch.tensor(10.0)) / 20)
+        self.cfg = cfg
+        self.factor = 10.0 if self.cfg.spec_type == "amplitude" else 20.0
+        self.register_buffer('log_conversion', torch.log(torch.tensor(10.0)) / self.factor)
 
     def forward(self, pred_norm: torch.Tensor, target_norm: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Compute the Masked Magnitude Loss and Spectral Convergence Loss."""
