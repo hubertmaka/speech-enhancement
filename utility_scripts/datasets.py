@@ -257,7 +257,7 @@ class DBToLogScaler(Scaler):
 
     def _determine_factor(self, cfg: AudioPreprocessorConfig) -> float:
         """Determine the divider factor based on the spectrogram type."""
-        return 10.0 if cfg.spec_type == "amplitude" else 20.0
+        return 20.0 if cfg.spec_type == "amplitude" else 10.0
 
     def forward(self, spec_db: torch.Tensor) -> torch.Tensor:
         """Convert decibel spectrogram to log scale used by HiFi-GAN."""

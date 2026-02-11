@@ -20,9 +20,11 @@ class AudioPreprocessorConfig:
     hop_length: int
     n_mels: int
     top_db: int
+    mask_loss_threshold: float
+    mask_loss_weight: float
+    max_spec_shapes: tuple[int, int]
     spec_type: Literal["amplitude", "power"] = "amplitude"
     mel_scale: Literal["htk", "slaney"] = "htk"
-    max_spec_shapes: tuple[int, int]
 
 
 @dataclass

@@ -4,6 +4,7 @@ import pytorch_lightning as pl
 
 from utility_scripts.mel_bin2bin.losses import MaskedSpectralLoss
 from utility_scripts.mel_bin2bin.models import Bin2BinGenerator, Bin2BinDiscriminator
+from utility_scripts.configs import AudioPreprocessorConfig
 
 
 class Bin2Bin(pl.LightningModule):
@@ -14,6 +15,7 @@ class Bin2Bin(pl.LightningModule):
             discriminator: Bin2BinDiscriminator,
             pipeline: nn.Module,
             scaler: nn.Module,
+            audio_cfg: AudioPreprocessorConfig,
             lr: float = 0.0002,
             lambda_mag: float = 250.0, 
             lambda_sc: float = 250.0,
@@ -28,20 +30,21 @@ class Bin2Bin(pl.LightningModule):
         self.discriminator = discriminator
         self.pipeline = pipeline
         self.scaler = scaler
+        self.audio_cfg = audio_cfg
 
         self.ls = label_smoothing
         
-        self.spectral_losses = MaskedSpectralLoss(scaler=scaler)    
+        self.spectral_losses = MaskedSpectralLoss(scaler=scaler, cfg=audio_cfg)    
         self.adversarial_loss = nn.MSELoss()
         
         self.automatic_optimization = False
         self.gradient_clip_val = 1.0
         self.example_input_array = torch.randn(32, 1, 80, 128)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass through the generator and discriminator."""
         fake_spec = self.generator(x)
         disc_out = self.discriminator(fake_spec, x)
-
         return fake_spec, disc_out
 
     def configure_optimizers(self) -> tuple[list[torch.optim.Optimizer], list[torch.optim.lr_scheduler._LRScheduler]]:
