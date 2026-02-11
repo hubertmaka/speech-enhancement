@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from utility_scripts.pix2pix.layers import EncoderBlock, DecoderBlock
+from src.pix2pix.layers import EncoderBlock, DecoderBlock
 
 
 class Pix2PixGenerator(nn.Module):

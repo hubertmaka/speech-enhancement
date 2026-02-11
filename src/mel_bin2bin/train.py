@@ -1,9 +1,9 @@
-from utility_scripts.datasets import *
-from utility_scripts.mel_bin2bin.models import Bin2BinGenerator, Bin2BinDiscriminator
-from utility_scripts.mel_bin2bin.strategies import Bin2Bin
-from utility_scripts.utils import init_weights
+from src.datasets import *
+from src.mel_bin2bin.models import Bin2BinGenerator, Bin2BinDiscriminator
+from src.mel_bin2bin.strategies import Bin2Bin
+from src.utils import init_weights
 
-from utility_scripts.mel_bin2bin.utils import *
+from src.mel_bin2bin.utils import *
 
 
 def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.Trainer, Bin2Bin, AudioDataModule]:

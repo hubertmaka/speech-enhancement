@@ -13,7 +13,7 @@ import torchaudio.functional as F
 from torch.utils.data import IterableDataset, get_worker_info, DataLoader
 import torch.nn as nn
 
-from utility_scripts.configs import (
+from src.configs import (
     MixingAudioDatasetConfig, 
     AudioPreprocessorConfig, 
     AudioAugumentorConfig, 

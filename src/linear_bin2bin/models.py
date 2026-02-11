@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from utility_scripts.mel_bin2bin.layers import (
+from src.linear_bin2bin.layers import (
     ResidualEncoderBlock,
     ResidualDecoderBlock,
     DilatedResBlock,
@@ -17,17 +17,15 @@ class Bin2BinGenerator(nn.Module):
         super().__init__()
         nf = start_filters
         
-        self.encoder1 = ResidualEncoderBlock(1, nf)      
+        self.encoder1 = ResidualEncoderBlock(1, nf, use_norm=False)      
         self.encoder2 = ResidualEncoderBlock(nf, nf*2)                   
         self.encoder3 = ResidualEncoderBlock(nf*2, nf*4)                 
-        self.encoder4 = ResidualEncoderBlock(nf*4, nf*8) 
+        self.encoder4 = ResidualEncoderBlock(nf*4, nf*8, use_norm=False) 
         
         self.bottleneck = nn.Sequential(
             DilatedResBlock(nf*8, dilation=2),
-            # SpectralAttention(nf*8),
             DilatedResBlock(nf*8, dilation=4),
-            # SpectralAttention(nf*8),
-            DilatedResBlock(nf*8, dilation=4),
+            DilatedResBlock(nf*8, dilation=8),
             SpectralAttention(nf*8)
         )
         
@@ -36,8 +34,9 @@ class Bin2BinGenerator(nn.Module):
         self.gate3 = AttentionGate(F_g=nf,   F_l=nf,   F_int=nf//2)
         
         self.decoder1 = ResidualDecoderBlock(nf*8, nf*4, dropout=0.5)    
-        self.decoder2 = ResidualDecoderBlock(nf*4*2, nf*2, dropout=0.5)  
-        self.decoder3 = ResidualDecoderBlock(nf*2*2, nf, dropout=0.0)
+        self.decoder2 = ResidualDecoderBlock(nf*4*2, nf*2, dropout=0.0)  
+        self.decoder3 = ResidualDecoderBlock(nf*2*2, nf, dropout=0.0)    
+
         self.final = nn.Sequential(
             nn.ReflectionPad2d(1),
             nn.Conv2d(nf*2, 1, kernel_size=3, stride=1, padding=0),
@@ -67,9 +66,10 @@ class Bin2BinGenerator(nn.Module):
         
         output = self.final(d3)
         return output
-
+    
 
 class Bin2BinDiscriminator(nn.Module):
+    """PatchGAN Discriminator for Bin2Bin model."""
     def __init__(
             self, 
             in_channels: int = 2, 
@@ -78,21 +78,18 @@ class Bin2BinDiscriminator(nn.Module):
         super().__init__()
         nf = start_filters
 
-        # Layer 1: Stride 2 (Downsample) -> Output: 40x64
-        self.layer_1 = PatchBlock(in_channels, nf, kernel_size=(4,4), stride=2)
-        
-        # Layer 2: Stride 1 (Zachowaj rozmiar) -> Output: 40x64
-        self.layer_2 = PatchBlock(nf, nf * 2, kernel_size=(4,4), stride=2)
-        
-        # # Layer 3: Stride 1 -> Output: 40x64
-        # self.layer_3 = PatchBlock(nf * 2, nf * 4, kernel_size=(4,4), stride=1)
-        
-        self.final = nn.Conv2d(nf * 2, 1, kernel_size=(4,4), stride=1, padding=1)
+        self.layer_1 = PatchBlock(in_channels, nf, normalization=False)
+        self.layer_2 = PatchBlock(nf, nf * 2)
+        self.layer_3 = PatchBlock(nf * 2, nf * 4)
+        self.layer_4 = PatchBlock(nf * 4, nf * 8, stride=1)
+        self.final = nn.Conv2d(nf * 8, 1, (8, 2), padding=(3, 1), bias=False)
 
     def forward(self, x: torch.Tensor, condition: torch.Tensor) -> torch.Tensor:
+        """Forward pass through the Bin2Bin Discriminator."""
         d_in = torch.cat([x, condition], dim=1)
         d1 = self.layer_1(d_in)
         d2 = self.layer_2(d1)
-        # d3 = self.layer_3(d2)
-        output = self.final(d2)
+        d3 = self.layer_3(d2)
+        d4 = self.layer_4(d3)
+        output = self.final(d4)
         return output

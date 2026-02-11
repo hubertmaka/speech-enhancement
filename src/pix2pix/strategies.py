@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 
-from utility_scripts.pix2pix.models import Pix2PixDiscriminator, Pix2PixGenerator
-from utility_scripts.utils import init_weights
+from src.pix2pix.models import Pix2PixDiscriminator, Pix2PixGenerator
+from src.utils import init_weights
 
 
 class Pix2Pix(pl.LightningModule):

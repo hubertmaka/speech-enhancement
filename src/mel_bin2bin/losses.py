@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from utility_scripts.configs import AudioPreprocessorConfig
+from src.configs import AudioPreprocessorConfig
 
 
 class MaskedSpectralLoss(nn.Module):

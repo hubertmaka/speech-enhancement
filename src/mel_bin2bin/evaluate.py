@@ -4,11 +4,11 @@ import pandas as pd
 import IPython.display as ipd
 from speechbrain.inference.vocoders import HIFIGAN
 
-from utility_scripts.configs import create_configs
-from utility_scripts.mel_bin2bin.utils import create_pipeline, create_dataset, create_scaler
-from utility_scripts.mel_bin2bin.strategies import Bin2Bin  
-from utility_scripts.mel_bin2bin.utils import DBToLogScaler
-from utility_scripts.mel_bin2bin.models import Bin2BinGenerator, Bin2BinDiscriminator
+from src.configs import create_configs
+from src.mel_bin2bin.utils import create_pipeline, create_dataset, create_scaler
+from src.mel_bin2bin.strategies import Bin2Bin  
+from src.mel_bin2bin.utils import DBToLogScaler
+from src.mel_bin2bin.models import Bin2BinGenerator, Bin2BinDiscriminator
 
 
 def evaluate_from_checkpoint(

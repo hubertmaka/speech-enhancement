@@ -7,25 +7,25 @@ from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping, RichMode
 from pytorch_lightning.loggers import TensorBoardLogger, CSVLogger
 from pytorch_lightning.tuner import Tuner
 
-from utility_scripts.metadata import (
+from src.metadata import (
     get_ears_personal_metadata,
     preprocess_ears_metadata,
     preprocess_wham_metadata,
     merge_ears_filepaths_with_metadata,
     prepare_for_training
 )
-from utility_scripts.configs import (
+from src.configs import (
     MixingAudioDatasetConfig,
     AudioPreprocessorConfig,
     NormalizerConfig,
     AudioAugumentorConfig,
-    LinearBin2BinTrainConfig
+    Pix2PixTrainConfig
 )
-from utility_scripts.callbacks import SpectrogramLogger
-from utility_scripts.datasets import *
-from utility_scripts.linear_bin2bin.models import Bin2BinGenerator, Bin2BinDiscriminator
-from utility_scripts.linear_bin2bin.strategies import Bin2Bin
-from utility_scripts.utils import init_weights
+from src.callbacks import SpectrogramLogger
+from src.datasets import *
+from src.pix2pix.models import Pix2PixGenerator, Pix2PixDiscriminator
+from src.pix2pix.strategies import Pix2Pix
+from src.utils import init_weights
 
 
 def create_configs() -> dict[str, dataclass]:
@@ -61,17 +61,12 @@ def create_configs() -> dict[str, dataclass]:
             time_mask_secs=0.1,
             freq_mask_bins=None
         ),
-        "train_cfg": LinearBin2BinTrainConfig(
+        "train_cfg": Pix2PixTrainConfig(
             batch_size=16,
             num_workers=4,
             max_epochs=200,
             learning_rate=0.0002,
-            lambda_mag=45.0,
-            lambda_sc=25.0,
-            discriminator_train_freq=1,
-            g_filters=32,
-            d_filters=32,
-            d_input_channels=2
+            lambda_recon=100.0
         )
     }
 
@@ -201,22 +196,18 @@ def create_data_module(
 
 
 def create_strategy(
-        generator: Bin2BinGenerator, 
-        discriminator: Bin2BinDiscriminator, 
-        pipeline: DataPipeline, 
-        scaler: Normalizer,
-        cfg: LinearBin2BinTrainConfig
-    ) -> Bin2Bin:
-    """Create the Bin2Bin model for training."""
-    model = Bin2Bin(
+        generator: Pix2PixGenerator, 
+        discriminator: Pix2PixDiscriminator, 
+        pipeline: DataPipeline,
+        cfg: Pix2PixTrainConfig
+    ) -> Pix2Pix:
+    """Create the Pix2Pix model for training."""
+    model = Pix2Pix(
         generator=generator,
         discriminator=discriminator,
         pipeline=pipeline,
-        scaler=scaler,
         lr=cfg.learning_rate,
-        lambda_mag=cfg.lambda_mag,
-        lambda_sc=cfg.lambda_sc,
-        discriminator_train_freq=cfg.discriminator_train_freq
+        lambda_recon=cfg.lambda_recon
     )
     return model
 
@@ -225,7 +216,7 @@ def create_callbacks() -> list:
     """Create a list of callbacks for training."""
     checkpoint_callback = ModelCheckpoint(
         dirpath="checkpoints",
-        filename="linear_bin2bin-{epoch:02d}-{val_loss:.4f}",
+        filename="pix2pix-{epoch:02d}-{val_loss:.4f}",
         save_top_k=3,
         monitor="val_loss",
         verbose=True,
@@ -250,8 +241,8 @@ def create_callbacks() -> list:
 
 def create_loggers() -> tuple[TensorBoardLogger, CSVLogger]:
     """Create TensorBoard and CSV loggers."""
-    logger = TensorBoardLogger(save_dir="tb_logs", name="linear_bin2bin")
-    csv_logger = CSVLogger(save_dir="csv_logs", name="linear_bin2bin")
+    logger = TensorBoardLogger(save_dir="tb_logs", name="pix2pix")
+    csv_logger = CSVLogger(save_dir="csv_logs", name="pix2pix")
     return logger, csv_logger
 
 
@@ -259,7 +250,7 @@ def create_trainer(
         train_size: int,
         train_percentage: float,
         max_epochs: int,
-        cfg: LinearBin2BinTrainConfig,
+        cfg: Pix2PixTrainConfig,
         loggers: list,
         callbacks: list,
 ):
@@ -281,8 +272,8 @@ def create_trainer(
     return trainer
 
 
-def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.Trainer, Bin2Bin, AudioDataModule]:
-    """Main function to set up and start training the Bin2Bin model."""
+def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.Trainer, Pix2Pix, AudioDataModule]:
+    """Main function to set up and start training the Pix2Pix model."""
     configs = create_configs()
     dataframes = create_dataframes(shared_path="/kaggle/input")
     split_dfs = split_dataframes(dataframes["ears_df"], dataframes["wham_df"], train_percentage=train_percentage, reduced_size=None)
@@ -316,11 +307,8 @@ def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.T
         num_workers=configs["train_cfg"].num_workers
     )
 
-    generator = Bin2BinGenerator(start_filters=configs["train_cfg"].g_filters)
-    discriminator = Bin2BinDiscriminator(
-        in_channels=configs["train_cfg"].d_input_channels, 
-        filters=configs["train_cfg"].d_filters
-    )
+    generator = Pix2PixGenerator()
+    discriminator = Pix2PixDiscriminator()
 
     generator.apply(init_weights)
     discriminator.apply(init_weights)
@@ -329,7 +317,6 @@ def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.T
         generator=generator,
         discriminator=discriminator,
         pipeline=pipeline,
-        scaler=create_scaler(configs["normalizer_cfg"]),
         cfg=configs["train_cfg"]
     )
 

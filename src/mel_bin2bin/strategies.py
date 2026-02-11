@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 
-from utility_scripts.linear_bin2bin.losses import MaskedSpectralLoss
-from utility_scripts.linear_bin2bin.models import Bin2BinGenerator, Bin2BinDiscriminator
+from src.mel_bin2bin.losses import MaskedSpectralLoss
+from src.mel_bin2bin.models import Bin2BinGenerator, Bin2BinDiscriminator
+from src.configs import AudioPreprocessorConfig
 
 
 class Bin2Bin(pl.LightningModule):
@@ -14,11 +15,13 @@ class Bin2Bin(pl.LightningModule):
             discriminator: Bin2BinDiscriminator,
             pipeline: nn.Module,
             scaler: nn.Module,
+            audio_cfg: AudioPreprocessorConfig,
             lr: float = 0.0002,
             lambda_mag: float = 250.0, 
             lambda_sc: float = 250.0,
             discriminator_train_freq: int = 1,
-            label_smoothing: float = 0.9
+            label_smoothing: float = 0.9,
+            warmup_epochs: int = 5
         ) -> None:
         super().__init__()
         self.save_hyperparameters(ignore=["generator", "discriminator", "pipeline", "scaler"])
@@ -27,14 +30,22 @@ class Bin2Bin(pl.LightningModule):
         self.discriminator = discriminator
         self.pipeline = pipeline
         self.scaler = scaler
+        self.audio_cfg = audio_cfg
 
         self.ls = label_smoothing
         
-        self.spectral_losses = MaskedSpectralLoss(scaler=scaler)    
+        self.spectral_losses = MaskedSpectralLoss(scaler=scaler, cfg=audio_cfg)    
         self.adversarial_loss = nn.MSELoss()
         
         self.automatic_optimization = False
         self.gradient_clip_val = 1.0
+        self.example_input_array = torch.randn(32, 1, 80, 128)
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        """Forward pass through the generator and discriminator."""
+        fake_spec = self.generator(x)
+        disc_out = self.discriminator(fake_spec, x)
+        return fake_spec, disc_out
 
     def configure_optimizers(self) -> tuple[list[torch.optim.Optimizer], list[torch.optim.lr_scheduler._LRScheduler]]:
        """Configure optimizers and learning rate schedulers."""
@@ -43,53 +54,67 @@ class Bin2Bin(pl.LightningModule):
        
        scheduler_g = torch.optim.lr_scheduler.ReduceLROnPlateau(opt_g, mode='min', factor=0.5, patience=5, verbose=True, min_lr=1e-6)
        scheduler_d = torch.optim.lr_scheduler.ReduceLROnPlateau(opt_d, mode='min', factor=0.5, patience=5, verbose=True, min_lr=1e-6)
+        
        return [opt_g, opt_d], [scheduler_g, scheduler_d]
 
     def training_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Training step for Bin2Bin model."""
-        # GET OPTIMIZERS
         g_opt, d_opt = self.optimizers()
         mixed_audio, clean_audio = batch
-        # PREPROCES DATA
+        
         real_lossy_spec, real_clean_spec = self.pipeline(mixed_audio, clean_audio)
         
-        # TRAIN DISCRIMINATOR
-        train_d = (batch_idx % self.hparams.discriminator_train_freq == 0)
+        is_warmup = self.current_epoch < self.hparams.warmup_epochs
+        train_d = (batch_idx % self.hparams.discriminator_train_freq == 0) and (not is_warmup)
+        
         loss_d_total = None 
 
         if train_d:
             with torch.no_grad():
                 fake_clean_spec_detached = self.generator(real_lossy_spec)
+            
             # REAL CLEAN
             pred_real = self.discriminator(real_clean_spec, real_lossy_spec)
             loss_d_real = self.adversarial_loss(pred_real, torch.ones_like(pred_real) * self.ls)
+            
             # FAKE CLEAN
             pred_fake_d = self.discriminator(fake_clean_spec_detached, real_lossy_spec)
             loss_d_fake = self.adversarial_loss(pred_fake_d, torch.zeros_like(pred_fake_d))
+            
             # LOSS D
             loss_d_total = (loss_d_real + loss_d_fake) * 0.5
+            
             # BACKWARD AND OPTIMIZE D
             d_opt.zero_grad()
             self.manual_backward(loss_d_total)
             torch.nn.utils.clip_grad_norm_(self.discriminator.parameters(), self.gradient_clip_val)
             d_opt.step()
         
+        # ----------------------------------------------------------------------
         # TRAIN GENERATOR
+        # ----------------------------------------------------------------------
         fake_clean_spec = self.generator(real_lossy_spec)
-        # ADVERSARIAL LOSS
-        pred_fake_g = self.discriminator(fake_clean_spec, real_lossy_spec)
-        loss_gan = self.adversarial_loss(pred_fake_g, torch.ones_like(pred_fake_g))
+        
+        if is_warmup:
+            loss_gan = torch.tensor(0.0, device=self.device)
+        else:
+            pred_fake_g = self.discriminator(fake_clean_spec, real_lossy_spec)
+            loss_gan = self.adversarial_loss(pred_fake_g, torch.ones_like(pred_fake_g))
+            
         # SPECTRAL LOSSES
         loss_mag, loss_sc = self.spectral_losses(fake_clean_spec, real_clean_spec)
+        
         # TOTAL GENERATOR LOSS
         total_gen_loss = loss_gan + \
                          (self.hparams.lambda_mag * loss_mag) + \
                          (self.hparams.lambda_sc * loss_sc)
+                         
         # BACKWARD AND OPTIMIZE G
         g_opt.zero_grad()
         self.manual_backward(total_gen_loss)
         torch.nn.utils.clip_grad_norm_(self.generator.parameters(), self.gradient_clip_val)
         g_opt.step()
+        
         # LOG METRICS
         log_metrics = {
             "g_total": total_gen_loss.detach(), 
@@ -97,19 +122,27 @@ class Bin2Bin(pl.LightningModule):
             "g_mag": loss_mag.detach(), 
             "g_sc": loss_sc.detach(),
         }
+        
         if loss_d_total is not None:
             log_metrics["d_loss"] = loss_d_total.detach()
 
         self.log_dict(log_metrics, prog_bar=True, on_step=False, on_epoch=True)
     
-    def validation_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
-       """Validation step for Bin2Bin model."""
-       mixed_audio, clean_audio = batch
-       real_lossy_spec, real_clean_spec = self.pipeline(mixed_audio, clean_audio)
-       fake_clean_spec = self.generator(real_lossy_spec)
-       loss_mag, loss_sc = self.spectral_losses(fake_clean_spec, real_clean_spec)
-       val_loss = loss_mag + loss_sc
-       self.log("val_loss", val_loss, prog_bar=True, on_step=False, on_epoch=True)
+    def validation_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> dict:
+        """Validation step for Bin2Bin model."""
+        mixed_audio, clean_audio = batch
+        real_lossy_spec, real_clean_spec = self.pipeline(mixed_audio, clean_audio)
+        fake_clean_spec = self.generator(real_lossy_spec)
+
+        loss_mag, loss_sc = self.spectral_losses(fake_clean_spec, real_clean_spec)
+        val_loss = loss_mag + loss_sc
+        self.log("val_loss", val_loss, prog_bar=True, on_step=False, on_epoch=True)
+        return {
+            "lossy_spec": real_lossy_spec,
+            "clean_spec": real_clean_spec,
+            "fake_spec": fake_clean_spec,
+            "loss": val_loss
+        }
     
     def on_validation_epoch_end(self) -> None:
        """Called at the end of the validation epoch to step LR schedulers."""
