@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from src.mel_bin2bin.layers import (
+from src.mel_generative_speech_enhancer.layers import (
     ResidualEncoderBlock,
     ResidualDecoderBlock,
     DilatedResBlock,
@@ -11,7 +11,7 @@ from src.mel_bin2bin.layers import (
 )
 
 
-class Bin2BinGenerator(nn.Module):
+class MelReGANGenerator(nn.Module):
     """U-Net based Generator with Residual Blocks and Attention Gates."""
     def __init__(self, start_filters: int = 64) -> None:
         super().__init__()
@@ -45,7 +45,7 @@ class Bin2BinGenerator(nn.Module):
         )
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through the Bin2Bin Generator."""
+        """Forward pass through the MelReGAN Generator."""
         e1_skip, e1_next = self.encoder1(x)      
         e2_skip, e2_next = self.encoder2(e1_next)     
         e3_skip, e3_next = self.encoder3(e2_next)     
@@ -69,7 +69,8 @@ class Bin2BinGenerator(nn.Module):
         return output
 
 
-class Bin2BinDiscriminator(nn.Module):
+class MelReGANDiscriminator(nn.Module):
+    """PatchGAN Discriminator."""
     def __init__(
             self, 
             in_channels: int = 2, 

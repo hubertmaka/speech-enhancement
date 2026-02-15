@@ -43,7 +43,7 @@ class AudioAugumentorConfig:
 
 
 @dataclass
-class MelBin2BinTrainConfig:
+class MelMelReGANTrainConfig:
     batch_size: int
     num_workers: int
     max_epochs: int
@@ -69,7 +69,7 @@ class Pix2PixTrainConfig:
 
 
 @dataclass
-class LinearBin2BinTrainConfig:
+class LinearMelReGANTrainConfig:
     batch_size: int
     num_workers: int
     max_epochs: int

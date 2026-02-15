@@ -17,12 +17,12 @@ from src.configs import (
     AudioPreprocessorConfig,
     NormalizerConfig,
     AudioAugumentorConfig,
-    MelBin2BinTrainConfig
+    MelMelReGANTrainConfig
 )
 from src.callbacks import SpectrogramLogger
 from src.datasets import *
-from src.mel_bin2bin.models import Bin2BinGenerator, Bin2BinDiscriminator
-from src.mel_bin2bin.strategies import Bin2Bin
+from src.mel_generative_speech_enhancer.models import MelReGANGenerator, MelReGANDiscriminator
+from src.mel_generative_speech_enhancer.strategies import MelReGAN
 
 
 def create_configs() -> dict[str, dataclass]:
@@ -60,7 +60,7 @@ def create_configs() -> dict[str, dataclass]:
             time_mask_secs=0.12,
             freq_mask_bins=None
         ),
-        "train_cfg": MelBin2BinTrainConfig(
+        "train_cfg": MelMelReGANTrainConfig(
             batch_size=32,
             num_workers=4,
             max_epochs=200,
@@ -214,15 +214,15 @@ def create_data_module(
 
 
 def create_strategy(
-        generator: Bin2BinGenerator, 
-        discriminator: Bin2BinDiscriminator, 
+        generator: MelReGANGenerator, 
+        discriminator: MelReGANDiscriminator, 
         pipeline: DataPipeline, 
         scaler: Normalizer,
         audio_cfg: AudioPreprocessorConfig,
-        cfg: MelBin2BinTrainConfig
-    ) -> Bin2Bin:
-    """Create the Bin2Bin model for training."""
-    model = Bin2Bin(
+        cfg: MelMelReGANTrainConfig
+    ) -> MelReGAN:
+    """Create the MelReGAN model for training."""
+    model = MelReGAN(
         generator=generator,
         discriminator=discriminator,
         pipeline=pipeline,
@@ -240,7 +240,7 @@ def create_callbacks() -> list:
     """Create a list of callbacks for training."""
     checkpoint_callback = ModelCheckpoint(
         dirpath="checkpoints",
-        filename="mel_bin2bin-{epoch:02d}-{val_loss:.4f}",
+        filename="mel_MelReGAN-{epoch:02d}-{val_loss:.4f}",
         save_top_k=3,
         monitor="val_loss",
         verbose=True,
@@ -265,15 +265,15 @@ def create_callbacks() -> list:
 
 def create_loggers() -> tuple[TensorBoardLogger, CSVLogger]:
     """Create TensorBoard and CSV loggers."""
-    logger = TensorBoardLogger(save_dir="tb_logs", name="mel_bin2bin")
-    csv_logger = CSVLogger(save_dir="csv_logs", name="mel_bin2bin")
+    logger = TensorBoardLogger(save_dir="tb_logs", name="mel_MelReGAN")
+    csv_logger = CSVLogger(save_dir="csv_logs", name="mel_MelReGAN")
     return logger, csv_logger
 
 def create_trainer(
         train_size: int,
         train_percentage: float,
         max_epochs: int,
-        cfg: MelBin2BinTrainConfig,
+        cfg: MelMelReGANTrainConfig,
         loggers: list,
         callbacks: list,
 ):

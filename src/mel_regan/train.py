@@ -1,13 +1,13 @@
 from src.datasets import *
-from src.mel_bin2bin.models import Bin2BinGenerator, Bin2BinDiscriminator
-from src.mel_bin2bin.strategies import Bin2Bin
+from src.mel_generative_speech_enhancer.models import MelReGANGenerator, MelReGANDiscriminator
+from src.mel_generative_speech_enhancer.strategies import MelReGAN
 from src.utils import init_weights
 
-from src.mel_bin2bin.utils import *
+from src.mel_generative_speech_enhancer.utils import *
 
 
-def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.Trainer, Bin2Bin, AudioDataModule]:
-    """Main function to set up and start training the Bin2Bin model."""
+def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.Trainer, MelReGAN, AudioDataModule]:
+    """Main function to set up and start training the MelReGAN model."""
     configs = create_configs()
     dataframes = create_dataframes(shared_path="/kaggle/input")
     split_dfs = split_dataframes(dataframes["ears_df"], dataframes["wham_df"], train_percentage=train_percentage, reduced_size=None)
@@ -41,8 +41,8 @@ def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.T
         num_workers=configs["train_cfg"].num_workers
     )
 
-    generator = Bin2BinGenerator(start_filters=configs["train_cfg"].g_filters)
-    discriminator = Bin2BinDiscriminator(
+    generator = MelReGANGenerator(start_filters=configs["train_cfg"].g_filters)
+    discriminator = MelReGANDiscriminator(
         in_channels=configs["train_cfg"].d_input_channels, 
         start_filters=configs["train_cfg"].d_filters
     )

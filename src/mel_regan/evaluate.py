@@ -5,10 +5,10 @@ import IPython.display as ipd
 from speechbrain.inference.vocoders import HIFIGAN
 
 from src.configs import create_configs
-from src.mel_bin2bin.utils import create_pipeline, create_dataset, create_scaler
-from src.mel_bin2bin.strategies import Bin2Bin  
-from src.mel_bin2bin.utils import DBToLogScaler
-from src.mel_bin2bin.models import Bin2BinGenerator, Bin2BinDiscriminator
+from src.mel_generative_speech_enhancer.utils import create_pipeline, create_dataset, create_scaler
+from src.mel_generative_speech_enhancer.strategies import MelReGAN  
+from src.mel_generative_speech_enhancer.utils import DBToLogScaler
+from src.mel_generative_speech_enhancer.models import MelReGANGenerator, MelReGANDiscriminator
 
 
 def evaluate_from_checkpoint(
@@ -18,7 +18,7 @@ def evaluate_from_checkpoint(
     num_samples: int = 3,
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 ) -> None:
-    """Evaluate the Bin2Bin model from a checkpoint and visualize results."""
+    """Evaluate the MelReGAN model from a checkpoint and visualize results."""
     
     configs = create_configs()
     
@@ -28,15 +28,15 @@ def evaluate_from_checkpoint(
         normalizer_cfg=configs["normalizer_cfg"]
     )
     
-    generator = Bin2BinGenerator(start_filters=configs["train_cfg"].g_filters)
-    discriminator = Bin2BinDiscriminator(
+    generator = MelReGANGenerator(start_filters=configs["train_cfg"].g_filters)
+    discriminator = MelReGANDiscriminator(
         in_channels=configs["train_cfg"].d_input_channels, 
         start_filters=configs["train_cfg"].d_filters
     )
     
     scaler = create_scaler(configs["normalizer_cfg"])
 
-    model = Bin2Bin.load_from_checkpoint(
+    model = MelReGAN.load_from_checkpoint(
         checkpoint_path,
         generator=generator,
         discriminator=discriminator,

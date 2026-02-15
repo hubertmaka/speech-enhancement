@@ -2,17 +2,17 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 
-from src.mel_bin2bin.losses import MaskedSpectralLoss
-from src.mel_bin2bin.models import Bin2BinGenerator, Bin2BinDiscriminator
+from src.mel_generative_speech_enhancer.losses import MaskedSpectralLoss
+from src.mel_generative_speech_enhancer.models import MelReGANGenerator, MelReGANDiscriminator
 from src.configs import AudioPreprocessorConfig
 
 
-class Bin2Bin(pl.LightningModule):
-    """Lightning Module for training Bin2Bin Generator and Discriminator."""
+class MelReGAN(pl.LightningModule):
+    """Lightning Module for training Mel Regenerative Generative Adversarial Network (MelReGAN)."""
     def __init__(
             self, 
-            generator: Bin2BinGenerator, 
-            discriminator: Bin2BinDiscriminator,
+            generator: MelReGANGenerator, 
+            discriminator: MelReGANDiscriminator,
             pipeline: nn.Module,
             scaler: nn.Module,
             audio_cfg: AudioPreprocessorConfig,
@@ -58,7 +58,7 @@ class Bin2Bin(pl.LightningModule):
        return [opt_g, opt_d], [scheduler_g, scheduler_d]
 
     def training_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
-        """Training step for Bin2Bin model."""
+        """Training step for MelReGAN model."""
         g_opt, d_opt = self.optimizers()
         mixed_audio, clean_audio = batch
         
@@ -129,7 +129,7 @@ class Bin2Bin(pl.LightningModule):
         self.log_dict(log_metrics, prog_bar=True, on_step=False, on_epoch=True)
     
     def validation_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> dict:
-        """Validation step for Bin2Bin model."""
+        """Validation step for MelReGAN model."""
         mixed_audio, clean_audio = batch
         real_lossy_spec, real_clean_spec = self.pipeline(mixed_audio, clean_audio)
         fake_clean_spec = self.generator(real_lossy_spec)
