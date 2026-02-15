@@ -5,10 +5,10 @@ import IPython.display as ipd
 from speechbrain.inference.vocoders import HIFIGAN
 
 from src.configs import create_configs
-from src.mel_generative_speech_enhancer.utils import create_pipeline, create_dataset, create_scaler
-from src.mel_generative_speech_enhancer.strategies import MelReGAN  
-from src.mel_generative_speech_enhancer.utils import DBToLogScaler
-from src.mel_generative_speech_enhancer.models import MelReGANGenerator, MelReGANDiscriminator
+from src.mel_regan.utils import create_pipeline, create_dataset, create_scaler
+from src.mel_regan.strategies import MelReGAN  
+from src.mel_regan.utils import DBToLogScaler
+from src.mel_regan.models import MelReGANGenerator, MelReGANDiscriminator
 
 
 def evaluate_from_checkpoint(

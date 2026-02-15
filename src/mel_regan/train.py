@@ -1,9 +1,9 @@
 from src.datasets import *
-from src.mel_generative_speech_enhancer.models import MelReGANGenerator, MelReGANDiscriminator
-from src.mel_generative_speech_enhancer.strategies import MelReGAN
+from src.mel_regan.models import MelReGANGenerator, MelReGANDiscriminator
+from src.mel_regan.strategies import MelReGAN
 from src.utils import init_weights
 
-from src.mel_generative_speech_enhancer.utils import *
+from src.mel_regan.utils import *
 
 
 def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.Trainer, MelReGAN, AudioDataModule]:

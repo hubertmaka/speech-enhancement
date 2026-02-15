@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from src.mel_generative_speech_enhancer.layers import (
+from src.mel_regan.layers import (
     ResidualEncoderBlock,
     ResidualDecoderBlock,
     DilatedResBlock,

@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import pytorch_lightning as pl
 
-from src.mel_generative_speech_enhancer.losses import MaskedSpectralLoss
-from src.mel_generative_speech_enhancer.models import MelReGANGenerator, MelReGANDiscriminator
+from src.mel_regan.losses import MaskedSpectralLoss
+from src.mel_regan.models import MelReGANGenerator, MelReGANDiscriminator
 from src.configs import AudioPreprocessorConfig
 
 

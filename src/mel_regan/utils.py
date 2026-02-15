@@ -21,8 +21,8 @@ from src.configs import (
 )
 from src.callbacks import SpectrogramLogger
 from src.datasets import *
-from src.mel_generative_speech_enhancer.models import MelReGANGenerator, MelReGANDiscriminator
-from src.mel_generative_speech_enhancer.strategies import MelReGAN
+from src.mel_regan.models import MelReGANGenerator, MelReGANDiscriminator
+from src.mel_regan.strategies import MelReGAN
 
 
 def create_configs() -> dict[str, dataclass]:
