@@ -1,7 +1,7 @@
 import math
+from typing import Literal
 import random
 import itertools
-from typing import Literal, Generator
 
 import torch
 import pandas as pd
@@ -9,21 +9,14 @@ import pytorch_lightning as pl
 import torch
 import torchaudio
 import torchaudio.transforms as T
-import torchaudio.functional as F
 from torch.utils.data import IterableDataset, get_worker_info, DataLoader
 import torch.nn as nn
 
 from src.configs import (
     MixingAudioDatasetConfig, 
     AudioPreprocessorConfig, 
-    AudioAugumentorConfig, 
-    NormalizerConfig
+    AudioAugumentorConfig
 )
-
-
-# ====================================================
-# Abstract Classes  
-# ====================================================
 
 class Normalizer(nn.Module):
     def __init__(self) -> None:
@@ -61,32 +54,24 @@ class Adjuster(nn.Module):
 # Implementations  
 # ====================================================
 
-class AudioMixingDataset(IterableDataset):
-    """Dataset for mixing clean audio with noise at random SNR levels."""
+class AudioLoader(IterableDataset):
+    """Dataset for loading clean and noisy audio at random SNR levels."""
     def __init__(
             self,
-            ears_df: pd.DataFrame,
-            wham_df: pd.DataFrame,
+            clean_filepaths: list[str],
+            noisy_filepaths: list[str],
             config: MixingAudioDatasetConfig,
-            mode: Literal["train", "val", "test"],
             skip_ratio: int = 1
     ) -> None:
-        self.ears_paths = ears_df["path"].tolist()
-        self.wham_paths = wham_df["path"].tolist()
+        self.clean_paths = clean_filepaths
+        self.noisy_paths = noisy_filepaths
         self.c = config
-        self.mode = mode
         self.sr = skip_ratio
         
         self.segment_samples = int(self.c.segment_sec * self.c.sample_rate)
         self.overlap_samples = int(self.c.overlap * self.c.sample_rate)
-        self.step_samples = (self.segment_samples - self.overlap_samples) * self.sr
         
-        if self.mode in ["val", "test"]:
-            torch.manual_seed(42)
-            self.fixed_snr_values = torch.empty(4000).uniform_(self.c.min_snr, self.c.max_snr)
-            self.snr_index = 0
-        else:
-            self.fixed_snr_values = None
+        self.base_step = self.segment_samples - self.overlap_samples
         
     def load_audio(self, path: str) -> torch.Tensor:
         """Load audio from a given file path."""
@@ -96,52 +81,28 @@ class AudioMixingDataset(IterableDataset):
             raise ValueError(f"Sample rate mismatch: expected {self.c.sample_rate}, got {sr}")
         
         return waveform.squeeze(0)
-    
-    def align_noise(self, noise: torch.Tensor, target_len: int) -> torch.Tensor:
-        """Align noise to the target length by trimming or repeating."""
-        noise_len = noise.shape[0]
-        
-        if noise_len == target_len:
-            return noise
-        
-        if noise_len < target_len:
-            repeats = (target_len + noise_len - 1) // noise_len
-            return noise.repeat(repeats)[:target_len]
+
+    def align_probe(self, audio: torch.Tensor) -> torch.Tensor:
+        """Align audio into overlapping windows of fixed size. 
+        Pads if audio is too short, truncates remainder if longer."""
+        L = audio.shape[0]
+        W = self.segment_samples
+        S = self.base_step
+
+        if L < W:
+            # Jeśli audio jest krótsze niż wymagana długość okna - dopełniamy (padding)
+            pad_amount = W - L
+            audio = torch.nn.functional.pad(audio, (0, pad_amount))
+            return audio.unsqueeze(0)
         else:
-            start = torch.randint(0, noise_len - target_len + 1, (1,), dtype=torch.long).item()
-            return noise[start:start + target_len]
-    
-    def cut_audio(self, audio: torch.Tensor, target_len: int) -> torch.Tensor:
-        """Cut or pad audio to the target length."""
-        audio_len = audio.shape[0]
-        if audio_len > target_len:
-            start = torch.randint(0, audio_len - target_len, (1,)).item()
-            return audio[start:start + target_len]
-        elif audio_len < target_len:
-            padding = target_len - audio_len
-            return torch.nn.functional.pad(audio, (0, padding))
-        else:
-            return audio
-    
-    def batch_add_noise(self, clean_windows: torch.Tensor, noise_windows: torch.Tensor) -> torch.Tensor:
-        """Add noise to clean audio windows at specified SNR levels."""
-        num_windows = clean_windows.shape[0]
-        
-        if self.mode == "train":
-            snr_db = torch.empty(num_windows).uniform_(self.c.min_snr, self.c.max_snr)
-        else:
-            snr_db = torch.empty(num_windows)
-            for i in range(num_windows):
-                snr_db[i] = self.fixed_snr_values[self.snr_index % len(self.fixed_snr_values)]
-                self.snr_index += 1
-        
-        return torch.vmap(F.add_noise)(clean_windows, noise_windows, snr_db)
+            windows = audio.unfold(0, W, S)
+            return windows
 
     def __iter__(self) -> Generator[tuple[torch.Tensor, torch.Tensor], None, None]:
-        """Iterator to yield mixed audio and clean audio pairs."""
+        """Iterator to yield noisy and clean audio pairs."""
         worker_info = get_worker_info()
-        clean_paths = self.ears_paths[:]
-        wham_paths = self.wham_paths[:]
+        clean_paths = self.clean_paths[:]
+        noisy_paths = self.noisy_paths[:]
         
         if worker_info is not None:
             per_worker = int(math.ceil(len(clean_paths) / float(worker_info.num_workers)))
@@ -149,31 +110,19 @@ class AudioMixingDataset(IterableDataset):
             iter_start = worker_id * per_worker
             iter_end = min(iter_start + per_worker, len(clean_paths))
             clean_paths = clean_paths[iter_start:iter_end]
-        
-        random.shuffle(wham_paths)
-        noise_iter = itertools.cycle(wham_paths)
-        
-        if self.mode == "train":
-            random.shuffle(clean_paths)
-            
-        for clean_path in clean_paths:
+            noisy_paths = noisy_paths[iter_start:iter_end]
+
+        for noisy_path, clean_path in zip(noisy_paths, clean_paths):
+            noisy_audio = self.load_audio(noisy_path)
             clean_audio = self.load_audio(clean_path)
 
-            if clean_audio.shape[0] < self.segment_samples:
-                padding = self.segment_samples - clean_audio.shape[0]
-                clean_audio = torch.nn.functional.pad(clean_audio, (0, padding))
+            noisy_windows = self.align_probe(noisy_audio)
+            clean_windows = self.align_probe(clean_audio)
 
-            noise_path = next(noise_iter)
-            noise_audio = self.load_audio(noise_path)
-            
-            noise_audio = self.align_noise(noise_audio, clean_audio.shape[0])
-            
-            clean_windows = clean_audio.unfold(0, self.segment_samples, self.step_samples)
-            noise_windows = noise_audio.unfold(0, self.segment_samples, self.step_samples)
+            num_windows = min(noisy_windows.shape[0], clean_windows.shape[0])
 
-            mixed_windows = self.batch_add_noise(clean_windows, noise_windows)
-            
-            yield from zip(mixed_windows, clean_windows)
+            for i in range(0, num_windows, self.sr):
+                yield noisy_windows[i], clean_windows[i]
 
 
 # ======= Spectrogram Processors =======
@@ -217,7 +166,7 @@ class MelSpectrogramProcessor(SpectrogramProcessor):
             power=1.0 if self.c.spec_type == "amplitude" else 2.0,
             mel_scale=self.c.mel_scale,
             norm=self.c.mel_scale,
-            center=True,
+            center=False,
         )
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -359,7 +308,7 @@ class TrimAdjuster(Adjuster):
 
     def forward(self, spec: torch.Tensor) -> torch.Tensor:
         """Trim spectrogram to target shape."""
-        spec = spec[:, :self.target_shape[0], :self.target_shape[1]]
+        spec = spec[:, :, :self.target_shape[0], :self.target_shape[1]]
         return spec
 
 
@@ -418,8 +367,8 @@ class AudioDataModule(pl.LightningDataModule):
     """DataModule for audio mixing dataset."""
     def __init__(
             self, 
-            train_ds: AudioMixingDataset,
-            val_ds: AudioMixingDataset,
+            train_ds: AudioLoader,
+            val_ds: AudioLoader,
             batch_size: int = 32, 
             num_workers: int = 4
         ) -> None:
@@ -437,7 +386,7 @@ class AudioDataModule(pl.LightningDataModule):
             num_workers=self.num_workers,
             pin_memory=True,
             persistent_workers=True if self.num_workers > 0 else False,
-            prefetch_factor=4 if self.num_workers > 0 else None,
+            prefetch_factor=16 if self.num_workers > 0 else None,
             drop_last=True,
             shuffle=False
         )
@@ -447,9 +396,10 @@ class AudioDataModule(pl.LightningDataModule):
         return DataLoader(
             self.val_ds, 
             batch_size=self.batch_size, 
-            num_workers=max(2, self.num_workers // 2),
+            num_workers=max(4, self.num_workers),
             pin_memory=True,
             persistent_workers=True if self.num_workers > 0 else False,
+            prefetch_factor=16 if self.num_workers > 0 else None,
             drop_last=False,
             shuffle=False
         )

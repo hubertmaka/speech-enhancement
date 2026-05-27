@@ -2,29 +2,28 @@ from src.datasets import *
 from src.mel_regan.models import MelReGANGenerator, MelReGANDiscriminator
 from src.mel_regan.strategies import MelReGAN
 from src.utils import init_weights
-
+from src.mel_regan.files_utils import create_filepaths
 from src.mel_regan.utils import *
 
 
 def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.Trainer, MelReGAN, AudioDataModule]:
     """Main function to set up and start training the MelReGAN model."""
     configs = create_configs()
-    dataframes = create_dataframes(shared_path="/kaggle/input")
-    split_dfs = split_dataframes(dataframes["ears_df"], dataframes["wham_df"], train_percentage=train_percentage, reduced_size=None)
+
+    train_filepaths = create_filepaths("/kaggle/input/datasets/hubertmka/ears-wham/train", subset="train")
+    val_filepaths = create_filepaths("/kaggle/input/datasets/hubertmka/ears-wham/valid", subset="valid")
     
     train_dataset = create_dataset(
-        ears_df=split_dfs["train_ears_df"],
-        wham_df=split_dfs["train_wham_df"],
+        clean_filepaths=train_filepaths["clean"],
+        noisy_filepaths=train_filepaths["noisy"],
         mixing_audio_cfg=configs["mixing_audio_cfg"],
-        train=True,
         skip_ratio=configs["mixing_audio_cfg"].skip_ratio
     )
 
     val_dataset = create_dataset(
-        ears_df=split_dfs["val_ears_df"],
-        wham_df=split_dfs["val_wham_df"],
+        clean_filepaths=val_filepaths["clean"],
+        noisy_filepaths=val_filepaths["noisy"],
         mixing_audio_cfg=configs["mixing_audio_cfg"],
-        train=False,
         skip_ratio=configs["mixing_audio_cfg"].skip_ratio
     )
 
@@ -71,8 +70,14 @@ def train(train_size: int = 10_000, train_percentage: float = 0.8) -> tuple[pl.T
         callbacks=callbacks
     )
 
-    return trainer, model, data_module, split_dfs
+    return trainer, model, data_module
 
+trainer, model, data_module = train(train_size=10_000, train_percentage=0.8)
 
-# trainer, model, data_module = train(train_size=10_000, train_percentage=0.8)
-# trainer.fit(model, datamodule=data_module)
+CHECKPOINT_TO_RESUME = "checkpoints/last.ckpt"
+if os.path.exists(CHECKPOINT_TO_RESUME):
+    print(f"Resuming training from checkpoint: {CHECKPOINT_TO_RESUME}")
+    trainer.fit(model, datamodule=data_module, ckpt_path=CHECKPOINT_TO_RESUME)
+else:
+    print("No checkpoint found, starting training from scratch.")
+    trainer.fit(model, datamodule=data_module)
